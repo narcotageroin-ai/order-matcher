@@ -10,8 +10,9 @@ file_order = st.file_uploader("Загрузите файл заказа (Excel)"
 file_supplier = st.file_uploader("Загрузите файл поставщика (Excel)", type=["xls", "xlsx"])
 
 if file_order and file_supplier:
-    df_order = pd.read_excel(file_order)
-    df_supplier = pd.read_excel(file_supplier)
+    # Используем движок openpyxl для корректной работы
+    df_order = pd.read_excel(file_order, engine="openpyxl")
+    df_supplier = pd.read_excel(file_supplier, engine="openpyxl")
 
     st.subheader("Наш файл заказа:")
     st.dataframe(df_order.head())
