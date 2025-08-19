@@ -38,15 +38,31 @@ if file_order and file_supplier:
         supplier_qty_col = st.selectbox("Столбец для вставки количества у поставщика", df_supplier.columns)
 
         if st.button("Сформировать файл"):
+            # Словарь ключ -> количество
             qty_dict = dict(zip(df_order[key_col].astype(str), df_order[qty_col]))
+            
+            # Сохраняем оригинальные данные для статистики
+            total = len(df_supplier)
             df_supplier[supplier_key_col] = df_supplier[supplier_key_col].astype(str)
+
+            # Подстановка количества
             df_supplier[supplier_qty_col] = df_supplier[supplier_key_col].map(qty_dict)
+
+            # Считаем статистику
+            updated = df_supplier[supplier_qty_col].notna().sum()
+            not_found = total - updated
+
+            # Показ статистики
+            st.subheader("📊 Результаты обработки")
+            st.write(f"Всего товаров у поставщика: **{total}**")
+            st.write(f"✅ Найдено и обновлено: **{updated}**")
+            st.write(f"⚠️ Не найдено в заказе: **{not_found}**")
 
             # Сохраняем в память
             output = BytesIO()
             df_supplier.to_excel(output, index=False, engine="openpyxl")
-            st.success("✅ Готово! Скачайте результат ниже.")
 
+            st.success("✅ Готово! Скачайте результат ниже.")
             st.download_button(
                 label="⬇ Скачать готовый Excel",
                 data=output.getvalue(),
