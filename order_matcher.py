@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 from io import BytesIO
+from openpyxl import load_workbook
 
 st.set_page_config(page_title="Формирование заказов", page_icon="📦", layout="centered")
 st.title("📦 Автоматическое формирование заказов поставщикам")
@@ -32,39 +33,56 @@ if file_order and file_supplier:
         st.subheader("Файл поставщика:")
         st.dataframe(df_supplier.head())
 
-        key_col = st.selectbox("Столбец для связывания (наш файл)", df_order.columns)
+        order_keys = st.multiselect("Столбцы для поиска (наш файл)", df_order.columns)
+        supplier_keys = st.multiselect("Столбцы для поиска (файл поставщика)", df_supplier.columns)
         qty_col = st.selectbox("Столбец с количеством (наш файл)", df_order.columns)
-        supplier_key_col = st.selectbox("Столбец для поиска у поставщика", df_supplier.columns)
         supplier_qty_col = st.selectbox("Столбец для вставки количества у поставщика", df_supplier.columns)
 
-        if st.button("Сформировать файл"):
-            # Словарь ключ -> количество
-            qty_dict = dict(zip(df_order[key_col].astype(str), df_order[qty_col]))
-            
-            # Сохраняем оригинальные данные для статистики
+        if len(order_keys) != len(supplier_keys):
+            st.warning("⚠️ Нужно выбрать одинаковое количество ключевых столбцов в обоих файлах.")
+        elif st.button("Сформировать файл"):
+            stats = {}
+            matched = 0
+
+            # Загружаем исходный файл поставщика через openpyxl
+            file_supplier.seek(0)  # сброс позиции
+            wb = load_workbook(file_supplier)
+            ws = wb.active
+
+            # Определяем индексы столбцов
+            supplier_columns = list(df_supplier.columns)
+            supplier_col_index_map = {col: idx+1 for idx, col in enumerate(supplier_columns)}
+            supplier_qty_col_idx = supplier_col_index_map[supplier_qty_col]
+
+            for idx, (okey, skey) in enumerate(zip(order_keys, supplier_keys), start=1):
+                qty_dict = dict(zip(df_order[okey].astype(str), df_order[qty_col]))
+                found = 0
+
+                for row in range(2, ws.max_row + 1):
+                    key_val = str(ws.cell(row=row, column=supplier_col_index_map[skey]).value)
+                    if key_val in qty_dict and ws.cell(row=row, column=supplier_qty_col_idx).value is None:
+                        ws.cell(row=row, column=supplier_qty_col_idx).value = qty_dict[key_val]
+                        found += 1
+
+                stats[f"Найдено по ключу {idx} ({okey} -> {skey})"] = found
+                matched += found
+
             total = len(df_supplier)
-            df_supplier[supplier_key_col] = df_supplier[supplier_key_col].astype(str)
+            not_found = total - matched
 
-            # Подстановка количества
-            df_supplier[supplier_qty_col] = df_supplier[supplier_key_col].map(qty_dict)
-
-            # Считаем статистику
-            updated = df_supplier[supplier_qty_col].notna().sum()
-            not_found = total - updated
-
-            # Показ статистики
             st.subheader("📊 Результаты обработки")
             st.write(f"Всего товаров у поставщика: **{total}**")
-            st.write(f"✅ Найдено и обновлено: **{updated}**")
-            st.write(f"⚠️ Не найдено в заказе: **{not_found}**")
+            for k, v in stats.items():
+                st.write(f"🔍 {k}: **{v}**")
+            st.write(f"⚠️ Не найдено: **{not_found}**")
 
-            # Сохраняем в память
+            # Сохраняем с сохранением форматирования
             output = BytesIO()
-            df_supplier.to_excel(output, index=False, engine="openpyxl")
+            wb.save(output)
 
             st.success("✅ Готово! Скачайте результат ниже.")
             st.download_button(
-                label="⬇ Скачать готовый Excel",
+                label="⬇ Скачать готовый Excel (с сохранением формата)",
                 data=output.getvalue(),
                 file_name="supplier_with_qty.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
